@@ -1,81 +1,54 @@
+"""Minimal command-line animation for the triple pendulum."""
+from __future__ import annotations
+
 import numpy as np
-import matplotlib.pyplot as plt
+from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation
 
-# 삼중진자 파라미터
-class TriplePendulumParams:
-    def __init__(self, m1=1, m2=1, m3=1, l1=1, l2=1, l3=1, g=9.81):
-        self.m1 = m1
-        self.m2 = m2
-        self.m3 = m3
-        self.l1 = l1
-        self.l2 = l2
-        self.l3 = l3
-        self.g = g
+from .triple_pendulum import (
+    TriplePendulumParams,
+    TriplePendulumSimulator,
+    compute_positions,
+)
 
-# 삼중진자 운동 방정식 (간단화, 실제론 수치적분 필요)
-def derivs(state, params):
-    # state: [theta1, omega1, theta2, omega2, theta3, omega3]
-    # 실제론 매우 복잡함. 여기선 예시로 단순화
-    theta1, omega1, theta2, omega2, theta3, omega3 = state
-    m1, m2, m3 = params.m1, params.m2, params.m3
-    l1, l2, l3 = params.l1, params.l2, params.l3
-    g = params.g
-    # 실제 삼중진자 운동 방정식은 sympy로 유도 필요
-    domega1 = -g/l1 * np.sin(theta1)
-    domega2 = -g/l2 * np.sin(theta2)
-    domega3 = -g/l3 * np.sin(theta3)
-    return np.array([omega1, domega1, omega2, domega2, omega3, domega3])
 
-# 시뮬레이션
-class TriplePendulumSim:
-    def __init__(self, params, y0, dt=0.01):
-        self.params = params
-        self.y = np.array(y0)
-        self.dt = dt
-        self.history = [self.y.copy()]
-    def step(self):
-        k1 = derivs(self.y, self.params)
-        k2 = derivs(self.y + 0.5*self.dt*k1, self.params)
-        k3 = derivs(self.y + 0.5*self.dt*k2, self.params)
-        k4 = derivs(self.y + self.dt*k3, self.params)
-        self.y += (self.dt/6)*(k1 + 2*k2 + 2*k3 + k4)
-        self.history.append(self.y.copy())
-    def run(self, steps):
-        for _ in range(steps):
-            self.step()
+def animate(simulator: TriplePendulumSimulator, interval_ms: int = 16) -> None:
+    params = simulator.params
+    total_length = params.l1 + params.l2 + params.l3
 
-# 2D 애니메이션
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.set_aspect("equal")
+    margin = 0.15 * total_length + 0.2
+    limit = total_length + margin
+    ax.set_xlim(-limit, limit)
+    ax.set_ylim(-limit, limit)
+    ax.grid(True, linestyle="--", alpha=0.3)
 
-def animate_2d(sim: TriplePendulumSim, interval=20):
-    history = np.array(sim.history)
-    l1, l2, l3 = sim.params.l1, sim.params.l2, sim.params.l3
-    x1 = l1 * np.sin(history[:,0])
-    y1 = -l1 * np.cos(history[:,0])
-    x2 = x1 + l2 * np.sin(history[:,2])
-    y2 = y1 - l2 * np.cos(history[:,2])
-    x3 = x2 + l3 * np.sin(history[:,4])
-    y3 = y2 - l3 * np.cos(history[:,4])
+    line, = ax.plot([], [], "o-", lw=2.5, color="tab:blue")
+    tail, = ax.plot([], [], color="tab:red", alpha=0.6, lw=1.0)
+    trace = []
 
-    fig, ax = plt.subplots()
-    ax.set_xlim(-l1-l2-l3-0.5, l1+l2+l3+0.5)
-    ax.set_ylim(-l1-l2-l3-0.5, l1+l2+l3+0.5)
-    ax.set_aspect('equal')
-    line, = ax.plot([], [], 'o-', lw=2)
+    def update(_):
+        simulator.step()
+        positions = compute_positions(simulator.state, simulator.params)
+        xs = [0.0, positions[0, 0], positions[1, 0], positions[2, 0]]
+        ys = [0.0, positions[0, 1], positions[1, 1], positions[2, 1]]
+        line.set_data(xs, ys)
+        trace.append(positions[-1, :2].copy())
+        if len(trace) > 600:
+            trace.pop(0)
+        trace_arr = np.array(trace)
+        tail.set_data(trace_arr[:, 0], trace_arr[:, 1])
+        return line, tail
 
-    def update(frame):
-        thisx = [0, x1[frame], x2[frame], x3[frame]]
-        thisy = [0, y1[frame], y2[frame], y3[frame]]
-        line.set_data(thisx, thisy)
-        return line,
-
-    ani = FuncAnimation(fig, update, frames=len(history), interval=interval, blit=True)
+    FuncAnimation(fig, update, interval=interval_ms, blit=True)
     plt.show()
 
-# 실행 예시
+
 if __name__ == "__main__":
-    params = TriplePendulumParams(m1=1, m2=1, m3=1, l1=1, l2=1, l3=1)
-    y0 = [np.pi/2, 0, np.pi/2, 0, np.pi/2, 0]
-    sim = TriplePendulumSim(params, y0, dt=0.02)
-    sim.run(500)
-    animate_2d(sim)
+    params = TriplePendulumParams()
+    theta = np.radians([120.0, -10.0, 20.0])
+    omega = np.radians([0.0, 0.0, 0.0])
+    state = [theta[0], omega[0], theta[1], omega[1], theta[2], omega[2]]
+    simulator = TriplePendulumSimulator(params, state, dt=0.002)
+    animate(simulator)
